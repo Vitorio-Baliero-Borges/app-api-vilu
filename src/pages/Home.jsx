@@ -130,12 +130,16 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <WhatsAppLogo size={44} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700 }}>{c.phone_number || 'Numero: clique em "Buscar numeros"'}</div>
-                <div style={{ color: 'var(--muted)', fontSize: 13 }}>{c.verified_name || 'WhatsApp Business'}</div>
+                <div style={{ fontWeight: 700 }}>WhatsApp Business</div>
+                <div style={{ color: 'var(--muted)', fontSize: 13 }}>{c.verified_name || 'Numero oficial (Cloud API)'}</div>
               </div>
               <span className="badge green">Ativo</span>
             </div>
-            <div className="grid" style={{ marginTop: 12 }}>
+            <div className="grid-3" style={{ marginTop: 12 }}>
+              <div>
+                <label>Numero de contato</label>
+                <input readOnly value={c.phone_number || 'Clique em "Buscar numeros"'} />
+              </div>
               <div>
                 <label>WABA ID</label>
                 <input readOnly value={c.waba_id || '-'} />

@@ -73,3 +73,7 @@ pre { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 8px; ov
 .footer { background: var(--card); border-top: 1px solid var(--border); padding: 18px 0; margin-top: auto; }
 .footer-inner { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 .footer-links { display: flex; gap: 16px; flex-wrap: wrap; }
+
+/* Tres colunas (numero + IDs lado a lado) */
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+@media (max-width: 700px) { .grid-3 { grid-template-columns: 1fr; } }
