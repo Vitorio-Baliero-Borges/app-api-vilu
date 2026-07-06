@@ -5,6 +5,15 @@ import { getPhoneNumberDetails, deregisterNumber } from '../lib/cloudApi'
 
 const STORE_KEY = 'apivilu_connection'
 
+function WhatsAppLogo({ size = 40 }) {
+  return (
+    <svg viewBox="0 0 32 32" width={size} height={size} aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="16" cy="16" r="16" fill="#25D366" />
+      <path fill="#fff" d="M16 6.5c-5.2 0-9.5 4.2-9.5 9.5 0 1.7.5 3.3 1.3 4.7L6.5 25.5l4.9-1.3c1.4.8 2.9 1.2 4.6 1.2h.01c5.2 0 9.49-4.2 9.49-9.5S21.2 6.5 16 6.5zm0 17.2h-.01c-1.5 0-2.9-.4-4.1-1.1l-.3-.2-2.9.8.8-2.8-.2-.3c-.8-1.3-1.2-2.7-1.2-4.2 0-4.3 3.5-7.9 7.9-7.9 2.1 0 4.1.8 5.6 2.3 1.5 1.5 2.3 3.5 2.3 5.6 0 4.4-3.6 7.8-7.9 7.8zm4.4-5.9c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1-.2.2-.6.8-.7.9-.1.1-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5l.4-.4c.1-.2.2-.3.2-.5 0-.1 0-.3-.1-.4l-.7-1.7c-.2-.4-.4-.4-.5-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.2 1.6 2.5 4 3.4.6.2 1 .4 1.3.5.6.2 1.1.2 1.5.1.5-.1 1.4-.6 1.6-1.1.2-.5.2-1 .1-1.1-.1-.2-.2-.2-.4-.3z" />
+    </svg>
+  )
+}
+
 export default function Home() {
   const [status, setStatus] = useState('')
   const [ready, setReady] = useState(false)
@@ -52,7 +61,7 @@ export default function Home() {
 
   const disconnect = async () => {
     if (!conn?.phone_number_id) return setStatus('Sem Phone Number ID.')
-    if (!token) return setStatus('Cole um token para desconectar (permissao whatsapp_business_management).')
+    if (!token) return setStatus('Cole um token para desconectar (whatsapp_business_management).')
     if (!window.confirm('Desconectar o numero da Cloud API (deregister)? Ele deixa de ser usado na API.')) return
     setBusy('disc'); setStatus('')
     try {
@@ -76,7 +85,12 @@ export default function Home() {
           comercial, informar o numero e escanear o QR Code no WhatsApp Business App
           (Configuracoes &gt; Conta &gt; Plataforma comercial).
         </p>
-        <button className="btn" onClick={handleConnect} disabled={!ready}>
+
+        <div className="status" style={{ background: '#eff6ff', borderColor: '#bfdbfe', color: '#1e40af' }}>
+          <strong>Importante:</strong> so e possivel usar a API oficial com um <strong>Portfolio Empresarial (BM) VERIFICADO e em conformidade</strong>. BMs nao verificadas, bloqueadas ou fora da politica comercial nao concluem a conexao (ou ficam com limites).
+        </div>
+
+        <button className="btn" onClick={handleConnect} disabled={!ready} style={{ marginTop: 4 }}>
           {ready ? 'Conectar meu numero (coexistencia)' : 'Carregando SDK...'}
         </button>
         {!configured && (
@@ -89,8 +103,17 @@ export default function Home() {
         <h2>Status da conexao {conn ? <span className="badge green">Conectado</span> : <span className="badge">Nao conectado</span>}</h2>
         {conn ? (
           <>
-            <label>Numero conectado</label>
-            <input readOnly value={conn.phone_number ? (conn.phone_number + (conn.verified_name ? '  -  ' + conn.verified_name : '')) : 'Nao informado - use "Buscar numero" abaixo'} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px', border: '1px solid var(--border)', borderRadius: 10, background: '#f0fdf4' }}>
+              <WhatsAppLogo size={44} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700 }}>WhatsApp Business</div>
+                <div style={{ color: 'var(--muted)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {conn.phone_number ? (conn.phone_number + (conn.verified_name ? ' - ' + conn.verified_name : '')) : 'Numero: use "Buscar numero" abaixo'}
+                </div>
+              </div>
+              <span className="badge green">Ativo</span>
+            </div>
+
             <div className="grid" style={{ marginTop: 12 }}>
               <div>
                 <label>WABA ID</label>
