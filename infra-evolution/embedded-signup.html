@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conectar WhatsApp (Coexistência)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #111; }
+    h1 { font-size: 20px; }
+    button { background: #25D366; color: #fff; border: 0; padding: 14px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; }
+    button:hover { filter: brightness(0.95); }
+    pre { background: #f4f4f5; padding: 12px; border-radius: 8px; overflow: auto; font-size: 13px; }
+    .box { border: 1px solid #e4e4e7; border-radius: 10px; padding: 16px; margin-top: 16px; }
+    code { background: #f4f4f5; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Conectar meu número ao WhatsApp Cloud API (Coexistência)</h1>
+  <p>Este fluxo conecta seu número à API oficial da Meta <strong>mantendo o app do celular funcionando</strong>.</p>
+
+  <!-- 1) PREENCHA estes dois valores (Bloco 1 do guia no Obsidian) -->
+  <script>
+    const APP_ID = "SEU_APP_ID";                 // Meta for Developers > Configurações do app
+    const CONFIGURATION_ID = "SEU_CONFIGURATION_ID"; // Config do Embedded Signup (Login do Facebook para Empresas)
+    const GRAPH_VERSION = "v21.0";
+  </script>
+
+  <button onclick="launchWhatsAppSignup()">Conectar meu número (coexistência)</button>
+
+  <div class="box">
+    <strong>Resultado da conexão</strong>
+    <pre id="output">Aguardando... clique no botão acima.</pre>
+    <p>Anote o <code>waba_id</code> e o <code>phone_number_id</code> que aparecerem aqui em <em>07 - Credenciais</em> no Obsidian.</p>
+  </div>
+
+  <!-- Facebook JS SDK -->
+  <script>
+    window.fbAsyncInit = function () {
+      FB.init({
+        appId: APP_ID,
+        autoLogAppEvents: true,
+        xfbml: true,
+        version: GRAPH_VERSION,
+      });
+    };
+
+    const out = (msg) => { document.getElementById("output").textContent = msg; };
+
+    // Recebe os dados finais do Embedded Signup (waba_id, phone_number_id)
+    window.addEventListener("message", (event) => {
+      if (!event.origin.endsWith("facebook.com")) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "WA_EMBEDDED_SIGNUP") {
+          console.log("WA_EMBEDDED_SIGNUP:", data);
+          if (data.event === "FINISH" || data.event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING") {
+            const d = data.data || {};
+            out("CONECTADO ✅\nwaba_id: " + (d.waba_id || "-") +
+                "\nphone_number_id: " + (d.phone_number_id || "-") +
+                "\n\nAgora gere o token permanente (System User) conforme o guia.");
+          } else if (data.event === "CANCEL") {
+            out("Fluxo cancelado em: " + (data.data && data.data.current_step));
+          }
+        }
+      } catch (e) { /* mensagem nao-JSON, ignorar */ }
+    });
+
+    // Callback do login: retorna um 'code' (troque por token no backend, OU ignore e use System User token)
+    const fbLoginCallback = (response) => {
+      if (response.authResponse && response.authResponse.code) {
+        console.log("Auth code (opcional, para troca por token):", response.authResponse.code);
+      } else {
+        out("Login nao concluido ou sem permissao.");
+      }
+    };
+
+    function launchWhatsAppSignup() {
+      if (APP_ID.startsWith("SEU_")) { out("Preencha APP_ID e CONFIGURATION_ID no arquivo primeiro."); return; }
+      out("Abrindo pop-up da Meta...");
+      FB.login(fbLoginCallback, {
+        config_id: CONFIGURATION_ID,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: {
+          setup: {},
+          featureType: "whatsapp_business_app_onboard", // <- COEXISTENCIA (mantem o app)
+          sessionInfoVersion: "3",
+        },
+      });
+    }
+  </script>
+  <script async defer crossorigin="anonymous" src="https://connect.facebook.net/pt_BR/sdk.js"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-// Envio de mensagem de texto via WhatsApp Cloud API (para o video da analise).
+// Envio de mensagem e consulta de detalhes via WhatsApp Cloud API.
 import { APP } from '../config'
 
 export function buildCurl({ phoneNumberId, token, to, text }) {
@@ -14,17 +14,17 @@ export async function sendText({ phoneNumberId, token, to, text }) {
   const url = `https://graph.facebook.com/${APP.graphVersion}/${phoneNumberId}/messages`
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to,
-      type: 'text',
-      text: { body: text },
-    }),
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } }),
   })
+  const json = await res.json().catch(() => ({}))
+  return { ok: res.ok, status: res.status, json }
+}
+
+// Busca o numero de exibicao e o nome verificado a partir do Phone Number ID.
+export async function getPhoneNumberDetails({ phoneNumberId, token }) {
+  const url = `https://graph.facebook.com/${APP.graphVersion}/${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   const json = await res.json().catch(() => ({}))
   return { ok: res.ok, status: res.status, json }
 }
