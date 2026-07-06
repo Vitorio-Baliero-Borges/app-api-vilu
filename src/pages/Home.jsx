@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { APP } from '../config'
 import { loadFacebookSdk, launchSignup, attachSignupListener } from '../lib/embeddedSignup'
-import { getPhoneNumberDetails } from '../lib/cloudApi'
+import { getPhoneNumberDetails, deregisterNumber } from '../lib/cloudApi'
 
 const STORE_KEY = 'apivilu_connection'
 
@@ -9,7 +9,7 @@ export default function Home() {
   const [status, setStatus] = useState('')
   const [ready, setReady] = useState(false)
   const [token, setToken] = useState('')
-  const [fetching, setFetching] = useState(false)
+  const [busy, setBusy] = useState('')
   const [conn, setConn] = useState(() => {
     try { return JSON.parse(localStorage.getItem(STORE_KEY)) || null } catch { return null }
   })
@@ -20,14 +20,12 @@ export default function Home() {
     loadFacebookSdk().then(() => setReady(true))
     const detach = attachSignupListener({
       onData: (data) => {
-        const info = {
+        save({
           waba_id: data.waba_id,
           phone_number_id: data.phone_number_id,
-          // alguns fluxos ja retornam o numero; guardamos se vier
           phone_number: data.phone_number || data.display_phone_number || '',
           at: new Date().toISOString(),
-        }
-        save(info)
+        })
         setStatus('Numero conectado com sucesso!')
       },
       onStatus: setStatus,
@@ -36,28 +34,32 @@ export default function Home() {
   }, [])
 
   const configured = !APP.appId.startsWith('SEU_') && !APP.configurationId.startsWith('SEU_')
-
-  const handleConnect = () => {
-    launchSignup({ onStatus: setStatus, onCode: (code) => console.log('code:', code) })
-  }
-
-  const reset = () => { localStorage.removeItem(STORE_KEY); setConn(null); setStatus(''); setToken('') }
+  const handleConnect = () => launchSignup({ onStatus: setStatus, onCode: (c) => console.log('code:', c) })
+  const clearLocal = () => { localStorage.removeItem(STORE_KEY); setConn(null); setStatus(''); setToken('') }
 
   const fetchNumber = async () => {
-    if (!conn?.phone_number_id) { setStatus('Sem Phone Number ID para consultar.'); return }
-    if (!token) { setStatus('Cole um token de acesso para buscar o numero.'); return }
-    setFetching(true); setStatus('')
+    if (!conn?.phone_number_id) return setStatus('Sem Phone Number ID.')
+    if (!token) return setStatus('Cole um token para buscar o numero.')
+    setBusy('fetch'); setStatus('')
     try {
       const r = await getPhoneNumberDetails({ phoneNumberId: conn.phone_number_id, token })
-      if (r.ok && r.json && r.json.display_phone_number) {
+      if (r.ok && r.json?.display_phone_number) {
         save({ ...conn, phone_number: r.json.display_phone_number, verified_name: r.json.verified_name || '' })
         setStatus('Numero atualizado: ' + r.json.display_phone_number)
-      } else {
-        setStatus('Nao foi possivel buscar. Resposta: ' + JSON.stringify(r.json))
-      }
-    } catch (e) {
-      setStatus('Erro ao buscar (possivel CORS): ' + e.message)
-    } finally { setFetching(false) }
+      } else setStatus('Nao foi possivel buscar. Resposta: ' + JSON.stringify(r.json))
+    } catch (e) { setStatus('Erro (possivel CORS): ' + e.message) } finally { setBusy('') }
+  }
+
+  const disconnect = async () => {
+    if (!conn?.phone_number_id) return setStatus('Sem Phone Number ID.')
+    if (!token) return setStatus('Cole um token para desconectar (permissao whatsapp_business_management).')
+    if (!window.confirm('Desconectar o numero da Cloud API (deregister)? Ele deixa de ser usado na API.')) return
+    setBusy('disc'); setStatus('')
+    try {
+      const r = await deregisterNumber({ phoneNumberId: conn.phone_number_id, token })
+      if (r.ok) { setStatus('Numero desconectado (deregister) com sucesso.'); clearLocal() }
+      else setStatus('Falha ao desconectar. Resposta: ' + JSON.stringify(r.json))
+    } catch (e) { setStatus('Erro (possivel CORS): ' + e.message) } finally { setBusy('') }
   }
 
   return (
@@ -78,9 +80,7 @@ export default function Home() {
           {ready ? 'Conectar meu numero (coexistencia)' : 'Carregando SDK...'}
         </button>
         {!configured && (
-          <div className="status err">
-            Falta configurar: defina VITE_APP_ID e VITE_CONFIGURATION_ID (arquivo .env ou variaveis na Vercel).
-          </div>
+          <div className="status err">Falta configurar: defina VITE_APP_ID e VITE_CONFIGURATION_ID.</div>
         )}
         {status && <div className="status">{status}</div>}
       </section>
@@ -90,7 +90,7 @@ export default function Home() {
         {conn ? (
           <>
             <label>Numero conectado</label>
-            <input readOnly value={conn.phone_number ? (conn.phone_number + (conn.verified_name ? '  -  ' + conn.verified_name : '')) : 'Nao informado pelo cadastro - use "Buscar numero" abaixo'} />
+            <input readOnly value={conn.phone_number ? (conn.phone_number + (conn.verified_name ? '  -  ' + conn.verified_name : '')) : 'Nao informado - use "Buscar numero" abaixo'} />
             <div className="grid" style={{ marginTop: 12 }}>
               <div>
                 <label>WABA ID</label>
@@ -101,21 +101,24 @@ export default function Home() {
                 <input readOnly value={conn.phone_number_id || '-'} />
               </div>
             </div>
-            <p className="hint">Conectado em {new Date(conn.at).toLocaleString('pt-BR')}. Anote esses dados no seu Obsidian (07 - Credenciais).</p>
+            <p className="hint">Conectado em {new Date(conn.at).toLocaleString('pt-BR')}.</p>
 
-            {!conn.phone_number && (
-              <div className="card" style={{ background: '#fafafa' }}>
-                <h2 style={{ fontSize: 15 }}>Buscar numero conectado</h2>
-                <p className="desc">O cadastro nao devolveu o numero, so os IDs. Cole um token de acesso para o app buscar o numero na Graph API.</p>
-                <label>Access Token</label>
-                <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAxxxxxxxxxx" />
-                <div style={{ marginTop: 12 }}>
-                  <button className="btn" onClick={fetchNumber} disabled={fetching}>{fetching ? 'Buscando...' : 'Buscar numero'}</button>
-                </div>
+            <div className="card" style={{ background: '#fafafa' }}>
+              <h2 style={{ fontSize: 15 }}>Acoes (precisam de um token de acesso)</h2>
+              <p className="desc">Token com permissao whatsapp_business_management. Fica so no seu navegador.</p>
+              <label>Access Token</label>
+              <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAxxxxxxxxxx" />
+              <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button className="btn secondary" onClick={fetchNumber} disabled={busy === 'fetch'}>
+                  {busy === 'fetch' ? 'Buscando...' : 'Buscar numero'}
+                </button>
+                <button className="btn" style={{ background: '#b42318' }} onClick={disconnect} disabled={busy === 'disc'}>
+                  {busy === 'disc' ? 'Desconectando...' : 'Desconectar numero (deregister)'}
+                </button>
               </div>
-            )}
+            </div>
 
-            <button className="btn secondary" onClick={reset} style={{ marginTop: 12 }}>Limpar</button>
+            <button className="btn secondary" onClick={clearLocal} style={{ marginTop: 12 }}>Limpar (so a tela)</button>
           </>
         ) : (
           <p className="desc">Assim que voce concluir a conexao, o numero, o WABA ID e o Phone Number ID aparecem aqui.</p>

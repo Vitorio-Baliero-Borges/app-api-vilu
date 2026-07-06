@@ -1,4 +1,4 @@
-// Envio de mensagem e consulta de detalhes via WhatsApp Cloud API.
+// Envio, consulta e desconexao via WhatsApp Cloud API.
 import { APP } from '../config'
 
 export function buildCurl({ phoneNumberId, token, to, text }) {
@@ -25,6 +25,14 @@ export async function sendText({ phoneNumberId, token, to, text }) {
 export async function getPhoneNumberDetails({ phoneNumberId, token }) {
   const url = `https://graph.facebook.com/${APP.graphVersion}/${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  const json = await res.json().catch(() => ({}))
+  return { ok: res.ok, status: res.status, json }
+}
+
+// Desconecta (deregister) o numero da Cloud API. Para de usar o numero na API.
+export async function deregisterNumber({ phoneNumberId, token }) {
+  const url = `https://graph.facebook.com/${APP.graphVersion}/${phoneNumberId}/deregister`
+  const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
   const json = await res.json().catch(() => ({}))
   return { ok: res.ok, status: res.status, json }
 }
