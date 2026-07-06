@@ -1,4 +1,4 @@
-// Envio, consulta e desconexao via WhatsApp Cloud API.
+// Envio, consulta, listagem e desconexao via WhatsApp Cloud API.
 import { APP } from '../config'
 
 export function buildCurl({ phoneNumberId, token, to, text }) {
@@ -21,7 +21,7 @@ export async function sendText({ phoneNumberId, token, to, text }) {
   return { ok: res.ok, status: res.status, json }
 }
 
-// Busca o numero de exibicao e o nome verificado a partir do Phone Number ID.
+// Detalhes de um numero pelo Phone Number ID.
 export async function getPhoneNumberDetails({ phoneNumberId, token }) {
   const url = `https://graph.facebook.com/${APP.graphVersion}/${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -29,7 +29,15 @@ export async function getPhoneNumberDetails({ phoneNumberId, token }) {
   return { ok: res.ok, status: res.status, json }
 }
 
-// Desconecta (deregister) o numero da Cloud API. Para de usar o numero na API.
+// Lista TODOS os numeros de uma conta (WABA).
+export async function getWabaPhoneNumbers({ wabaId, token }) {
+  const url = `https://graph.facebook.com/${APP.graphVersion}/${wabaId}/phone_numbers?fields=display_phone_number,verified_name,quality_rating`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  const json = await res.json().catch(() => ({}))
+  return { ok: res.ok, status: res.status, json }
+}
+
+// Desconecta (deregister) o numero da Cloud API.
 export async function deregisterNumber({ phoneNumberId, token }) {
   const url = `https://graph.facebook.com/${APP.graphVersion}/${phoneNumberId}/deregister`
   const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })

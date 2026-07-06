@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
 import { APP } from '../config'
 import { loadFacebookSdk, launchSignup, attachSignupListener } from '../lib/embeddedSignup'
-import { getPhoneNumberDetails, deregisterNumber } from '../lib/cloudApi'
+import { getWabaPhoneNumbers, deregisterNumber } from '../lib/cloudApi'
 
-const STORE_KEY = 'apivilu_connection'
+const STORE_KEY = 'apivilu_connections'
+const OLD_KEY = 'apivilu_connection'
+
+function loadConns() {
+  try { const a = JSON.parse(localStorage.getItem(STORE_KEY)); if (Array.isArray(a)) return a } catch {}
+  try { const o = JSON.parse(localStorage.getItem(OLD_KEY)); if (o) return [o] } catch {}
+  return []
+}
 
 function WhatsAppLogo({ size = 40 }) {
   return (
@@ -19,20 +26,28 @@ export default function Home() {
   const [ready, setReady] = useState(false)
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState('')
-  const [conn, setConn] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || null } catch { return null }
-  })
+  const [conns, setConns] = useState(loadConns)
 
-  const save = (info) => { setConn(info); localStorage.setItem(STORE_KEY, JSON.stringify(info)) }
+  const persist = (arr) => { setConns(arr); localStorage.setItem(STORE_KEY, JSON.stringify(arr)) }
+
+  const addConn = (info) => {
+    setConns((prev) => {
+      const others = prev.filter((c) => c.phone_number_id !== info.phone_number_id)
+      const next = [{ ...info }, ...others]
+      localStorage.setItem(STORE_KEY, JSON.stringify(next))
+      return next
+    })
+  }
 
   useEffect(() => {
     loadFacebookSdk().then(() => setReady(true))
     const detach = attachSignupListener({
       onData: (data) => {
-        save({
+        addConn({
           waba_id: data.waba_id,
           phone_number_id: data.phone_number_id,
           phone_number: data.phone_number || data.display_phone_number || '',
+          verified_name: '',
           at: new Date().toISOString(),
         })
         setStatus('Numero conectado com sucesso!')
@@ -44,32 +59,40 @@ export default function Home() {
 
   const configured = !APP.appId.startsWith('SEU_') && !APP.configurationId.startsWith('SEU_')
   const handleConnect = () => launchSignup({ onStatus: setStatus, onCode: (c) => console.log('code:', c) })
-  const clearLocal = () => { localStorage.removeItem(STORE_KEY); setConn(null); setStatus(''); setToken('') }
 
-  const fetchNumber = async () => {
-    if (!conn?.phone_number_id) return setStatus('Sem Phone Number ID.')
-    if (!token) return setStatus('Cole um token para buscar o numero.')
-    setBusy('fetch'); setStatus('')
+  // Busca os numeros reais de todas as WABAs conectadas e preenche a lista.
+  const refreshNumbers = async () => {
+    if (!conns.length) return setStatus('Nenhuma conexao na lista.')
+    if (!token) return setStatus('Cole um token para buscar os numeros.')
+    setBusy('refresh'); setStatus('')
     try {
-      const r = await getPhoneNumberDetails({ phoneNumberId: conn.phone_number_id, token })
-      if (r.ok && r.json?.display_phone_number) {
-        save({ ...conn, phone_number: r.json.display_phone_number, verified_name: r.json.verified_name || '' })
-        setStatus('Numero atualizado: ' + r.json.display_phone_number)
-      } else setStatus('Nao foi possivel buscar. Resposta: ' + JSON.stringify(r.json))
+      const wabas = [...new Set(conns.map((c) => c.waba_id).filter(Boolean))]
+      const map = {}
+      for (const wabaId of wabas) {
+        const r = await getWabaPhoneNumbers({ wabaId, token })
+        if (r.ok && Array.isArray(r.json?.data)) {
+          for (const p of r.json.data) map[p.id] = { phone_number: p.display_phone_number, verified_name: p.verified_name || '' }
+        }
+      }
+      const next = conns.map((c) => (map[c.phone_number_id] ? { ...c, ...map[c.phone_number_id] } : c))
+      persist(next)
+      setStatus('Numeros atualizados.')
     } catch (e) { setStatus('Erro (possivel CORS): ' + e.message) } finally { setBusy('') }
   }
 
-  const disconnect = async () => {
-    if (!conn?.phone_number_id) return setStatus('Sem Phone Number ID.')
+  const disconnectItem = async (item) => {
     if (!token) return setStatus('Cole um token para desconectar (whatsapp_business_management).')
-    if (!window.confirm('Desconectar o numero da Cloud API (deregister)? Ele deixa de ser usado na API.')) return
-    setBusy('disc'); setStatus('')
+    if (!window.confirm('Desconectar ' + (item.phone_number || item.phone_number_id) + ' da Cloud API (deregister)?')) return
+    setBusy('disc-' + item.phone_number_id); setStatus('')
     try {
-      const r = await deregisterNumber({ phoneNumberId: conn.phone_number_id, token })
-      if (r.ok) { setStatus('Numero desconectado (deregister) com sucesso.'); clearLocal() }
+      const r = await deregisterNumber({ phoneNumberId: item.phone_number_id, token })
+      if (r.ok) { persist(conns.filter((c) => c.phone_number_id !== item.phone_number_id)); setStatus('Numero desconectado (deregister).') }
       else setStatus('Falha ao desconectar. Resposta: ' + JSON.stringify(r.json))
     } catch (e) { setStatus('Erro (possivel CORS): ' + e.message) } finally { setBusy('') }
   }
+
+  const removeItem = (item) => persist(conns.filter((c) => c.phone_number_id !== item.phone_number_id))
+  const clearAll = () => { localStorage.removeItem(STORE_KEY); localStorage.removeItem(OLD_KEY); persist([]); setToken('') }
 
   return (
     <>
@@ -85,66 +108,66 @@ export default function Home() {
           comercial, informar o numero e escanear o QR Code no WhatsApp Business App
           (Configuracoes &gt; Conta &gt; Plataforma comercial).
         </p>
-
         <div className="status" style={{ background: '#eff6ff', borderColor: '#bfdbfe', color: '#1e40af' }}>
-          <strong>Importante:</strong> so e possivel usar a API oficial com um <strong>Portfolio Empresarial (BM) VERIFICADO e em conformidade</strong>. BMs nao verificadas, bloqueadas ou fora da politica comercial nao concluem a conexao (ou ficam com limites).
+          <strong>Importante:</strong> so e possivel usar a API oficial com um <strong>Portfolio Empresarial (BM) VERIFICADO e em conformidade</strong>. BMs nao verificadas, bloqueadas ou fora da politica comercial nao concluem a conexao.
         </div>
-
         <button className="btn" onClick={handleConnect} disabled={!ready} style={{ marginTop: 4 }}>
           {ready ? 'Conectar meu numero (coexistencia)' : 'Carregando SDK...'}
         </button>
-        {!configured && (
-          <div className="status err">Falta configurar: defina VITE_APP_ID e VITE_CONFIGURATION_ID.</div>
-        )}
+        {!configured && <div className="status err">Falta configurar: defina VITE_APP_ID e VITE_CONFIGURATION_ID.</div>}
         {status && <div className="status">{status}</div>}
       </section>
 
       <section className="card">
-        <h2>Status da conexao {conn ? <span className="badge green">Conectado</span> : <span className="badge">Nao conectado</span>}</h2>
-        {conn ? (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px', border: '1px solid var(--border)', borderRadius: 10, background: '#f0fdf4' }}>
+        <h2>Numeros conectados <span className="badge green">{conns.length}</span></h2>
+
+        {conns.length === 0 && (
+          <p className="desc">Assim que voce concluir a conexao, os numeros aparecem aqui (cada conexao vira um item na lista).</p>
+        )}
+
+        {conns.map((c) => (
+          <div key={c.phone_number_id} style={{ border: '1px solid var(--border)', borderRadius: 10, background: '#f0fdf4', padding: 14, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <WhatsAppLogo size={44} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700 }}>WhatsApp Business</div>
-                <div style={{ color: 'var(--muted)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {conn.phone_number ? (conn.phone_number + (conn.verified_name ? ' - ' + conn.verified_name : '')) : 'Numero: use "Buscar numero" abaixo'}
-                </div>
+                <div style={{ fontWeight: 700 }}>{c.phone_number || 'Numero: clique em "Buscar numeros"'}</div>
+                <div style={{ color: 'var(--muted)', fontSize: 13 }}>{c.verified_name || 'WhatsApp Business'}</div>
               </div>
               <span className="badge green">Ativo</span>
             </div>
-
             <div className="grid" style={{ marginTop: 12 }}>
               <div>
                 <label>WABA ID</label>
-                <input readOnly value={conn.waba_id || '-'} />
+                <input readOnly value={c.waba_id || '-'} />
               </div>
               <div>
                 <label>Phone Number ID</label>
-                <input readOnly value={conn.phone_number_id || '-'} />
+                <input readOnly value={c.phone_number_id || '-'} />
               </div>
             </div>
-            <p className="hint">Conectado em {new Date(conn.at).toLocaleString('pt-BR')}.</p>
-
-            <div className="card" style={{ background: '#fafafa' }}>
-              <h2 style={{ fontSize: 15 }}>Acoes (precisam de um token de acesso)</h2>
-              <p className="desc">Token com permissao whatsapp_business_management. Fica so no seu navegador.</p>
-              <label>Access Token</label>
-              <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAxxxxxxxxxx" />
-              <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button className="btn secondary" onClick={fetchNumber} disabled={busy === 'fetch'}>
-                  {busy === 'fetch' ? 'Buscando...' : 'Buscar numero'}
-                </button>
-                <button className="btn" style={{ background: '#b42318' }} onClick={disconnect} disabled={busy === 'disc'}>
-                  {busy === 'disc' ? 'Desconectando...' : 'Desconectar numero (deregister)'}
-                </button>
-              </div>
+            <p className="hint">Conectado em {new Date(c.at).toLocaleString('pt-BR')}.</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn" style={{ background: '#b42318', padding: '8px 14px', fontSize: 13 }} onClick={() => disconnectItem(c)} disabled={busy === 'disc-' + c.phone_number_id}>
+                {busy === 'disc-' + c.phone_number_id ? 'Desconectando...' : 'Desconectar (deregister)'}
+              </button>
+              <button className="btn secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={() => removeItem(c)}>Remover da lista</button>
             </div>
+          </div>
+        ))}
 
-            <button className="btn secondary" onClick={clearLocal} style={{ marginTop: 12 }}>Limpar (so a tela)</button>
-          </>
-        ) : (
-          <p className="desc">Assim que voce concluir a conexao, o numero, o WABA ID e o Phone Number ID aparecem aqui.</p>
+        {conns.length > 0 && (
+          <div className="card" style={{ background: '#fafafa' }}>
+            <h2 style={{ fontSize: 15 }}>Acoes (precisam de um token de acesso)</h2>
+            <p className="desc">Token com permissao whatsapp_business_management. Fica so no seu navegador.</p>
+            <label>Access Token</label>
+            <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAxxxxxxxxxx" />
+            <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button className="btn" onClick={refreshNumbers} disabled={busy === 'refresh'}>
+                {busy === 'refresh' ? 'Buscando...' : 'Buscar numeros'}
+              </button>
+              <button className="btn secondary" onClick={clearAll}>Limpar lista (so a tela)</button>
+            </div>
+          </div>
         )}
       </section>
     </>
